@@ -268,6 +268,17 @@ export default function FormPage() {
 			>
 				Check Geolocation
 			</button>
+
+			<p>
+				行政区域は以下のサイトよりダウンロードして用いた。<br />
+				<a
+					href="https://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-N03-2025.html"
+					target="_blank"
+					rel="noopener noreferrer"
+      			>
+					国土交通省国土数値情報ダウンロードサイト
+				</a>
+			</p>
 		</div>
 	);
 }
