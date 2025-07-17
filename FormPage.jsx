@@ -1,6 +1,18 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 
+// 質問
+const questions = [
+	{ key: 'diagnosed', label: '花粉症と診断されていますか？' },
+	{ key: 'fever',     label: '発熱はありますか？' },
+	{ key: 'facePain',  label: '目や頬の奥は痛みますか？' },
+	{ key: 'eyeItch',   label: '目のかゆみはありますか？' },
+	{ key: 'nasal',     label: '鼻水は出ますか？' },
+	{ key: 'cough',     label: '咳は出ますか？' },
+	{ key: 'sneeze',    label: 'くしゃみはよく出ますか？' },
+	{ key: 'outdoor',   label: '屋外の方が症状を強く感じますか？' },
+  ];
+
 // 期間の最大値
 const periodMaxMap = {
 	day: 6,
@@ -11,20 +23,15 @@ const periodMaxMap = {
 export default function FormPage() {
 	const navigate = useNavigate();
 	const ranOnce = useRef(false);
-
-	// 質問
-	const [diagnosed, setDiagnosed] = useState('');
-	const [fever, setFever] = useState('');
-	const [facePain, setFacePain] = useState('');
-	const [eyeItch, setEyeItch] = useState('');
-	const [nasal, setNasal] = useState('');
-	const [cough, setCough] = useState('');
-	const [sneeze, setSneeze] = useState('');
-	
+	const [responses, setResponses] = useState(
+		Object.fromEntries(questions.map(q => [q.key, '']))
+	);
 	// 期間
 	const [periodType, setPeriodType] = useState('day');
 	const [periodValue, setPeriodValue] = useState(1);
 	const [periodMax, setPeriodMax] = useState(periodMaxMap['day']);
+
+	const [errors, setErrors] = useState({});
 	
 	// ウェルカムアラート
 	useEffect(() => {
@@ -40,6 +47,11 @@ export default function FormPage() {
     	setPeriodMax(max);
     	setPeriodValue(1);
   	}, [periodType]);
+
+	const handleRadio = (key, value) => {
+		setResponses(prev => ({ ...prev, [key]: value }));
+		setErrors(prev => ({ ...prev, [key]: '' }));
+	};	
 	
 	// 入力値を小数切り捨て・クランプ
 	const handlePeriodInput = e => {
@@ -95,18 +107,36 @@ export default function FormPage() {
 			return;
 	  	}
 	};
+
+	const validateQuestion = () => {
+		const newErrors = {};
+
+		// 質問のチェック
+		questions.forEach(({ key, label }) => {
+    		if (!['yes', 'no'].includes(responses[key])) {
+      			newErrors[key] = '回答が必要です';
+    		}
+  		});
+
+		if (Object.keys(newErrors).length > 0) {
+			setErrors(newErrors);
+	
+			// alert用メッセージ生成
+			const msgs = questions
+				.filter(q => newErrors[q.key])
+				.map(q => `・${q.label}`)
+				.join('\n');
+		
+			alert(`次の質問に回答してください：\n${msgs}`);
+			return false;
+		}
+		return true;
+	};
 	
 	// 送信＆位置情報取得
   	const handleCheck = () => {
     	// 送信前に質問に回答しているかチェック
-    	if (
-      		![diagnosed, fever, facePain, eyeItch, nasal, cough, sneeze].every(
-        		v => v === 'yes' || v === 'no'
-      		)
-    	) {
-      		alert('すべての質問に回答してください');
-      		return;
-    	}
+    	if (!validateQuestion()) return;
 
     	if (!navigator.geolocation) {
       		const msg = 'お使いの端末は、GeoLocation APIに対応していません。';
@@ -126,20 +156,14 @@ export default function FormPage() {
 							lng,
 							periodType,
 							periodValue: Number(periodValue),
-							diagnosed,
-							fever,
-							facePain,
-							eyeItch,
-							nasal,
-							cough,
-							sneeze,
+							...responses,
           				}),
         			})
         			const json = await res.json();
         		
-          			if (json.pollen && json.pollen.length) {
+          			if (json.analysis) {
               			navigate('/status', {
-              				state: { statusMessage: '取得完了', result: json },
+              				state: { statusMessage: '取得完了', ...json },
             			});
             		} else {
             			navigate('/status', {
@@ -183,173 +207,36 @@ export default function FormPage() {
         		確認します。
       		</p>
 
-			<fieldset>
-				<legend>花粉症と診断されていますか？</legend>
-				<label>
-					<input
-						type="radio"
-						name="diagnosed"
-						value="yes"
-						checked={diagnosed === 'yes'}
-						onChange={() => setDiagnosed('yes')}
-					/>
-					はい
-				</label>
-				<label style={{ marginLeft: '1em' }}>
-					<input
-						type="radio"
-						name="diagnosed"
-						value="no"
-						checked={diagnosed === 'no'}
-						onChange={() => setDiagnosed('no')}
-					/>
-					いいえ
-				</label>
-			</fieldset>
-			
-			<fieldset>
-				<legend>発熱はありますか？</legend>
-				<label>
-					<input
-						type="radio"
-						name="fever"
-						value="yes"
-						checked={fever === 'yes'}
-						onChange={() => setFever('yes')}
-					/>
-					はい
-				</label>
-				<label style={{ marginLeft: '1em' }}>
-					<input
-						type="radio"
-						name="fever"
-						value="no"
-						checked={fever === 'no'}
-						onChange={() => setFever('no')}
-					/>
-					いいえ
-				</label>
-			</fieldset>
-			
-			<fieldset>
-				<legend>目や頬の奥は痛みますか？</legend>
-				<label>
-					<input
-						type="radio"
-						name="facePain"
-						value="yes"
-						checked={facePain === 'yes'}
-						onChange={() => setFacePain('yes')}
-					/>
-					はい
-				</label>
-				<label style={{ marginLeft: '1em' }}>
-					<input
-						type="radio"
-						name="facePain"
-						value="no"
-						checked={facePain === 'no'}
-						onChange={() => setFacePain('no')}
-					/>
-					いいえ
-				</label>
-			</fieldset>
-			
-			<fieldset>
-				<legend>目のかゆみはありますか？</legend>
-				<label>
-					<input
-						type="radio"
-						name="eyeItch"
-						value="yes"
-						checked={eyeItch === 'yes'}
-						onChange={() => setEyeItch('yes')}
-					/>
-					はい
-				</label>
-				<label style={{ marginLeft: '1em' }}>
-					<input
-						type="radio"
-						name="eyeItch"
-						value="no"
-						checked={eyeItch === 'no'}
-						onChange={() => setEyeItch('no')}
-					/>
-					いいえ
-				</label>
-			</fieldset>
-			
-			<fieldset>
-				<legend>鼻水は出ますか？</legend>
-				<label>
-					<input
-						type="radio"
-						name="nasal"
-						value="yes"
-						checked={nasal === 'yes'}
-						onChange={() => setNasal('yes')}
-					/>
-					はい
-				</label>
-				<label style={{ marginLeft: '1em' }}>
-					<input
-						type="radio"
-						name="nasal"
-						value="no"
-						checked={nasal === 'no'}
-						onChange={() => setNasal('no')}
-					/>
-					いいえ
-				</label>
-			</fieldset>
-	
-			<fieldset>
-				<legend>咳は出ますか？</legend>
-				<label>
-					<input
-						type="radio"
-						name="cough"
-						value="yes"
-						checked={cough === 'yes'}
-						onChange={() => setCough('yes')}
-					/>
-					はい
-				</label>
-				<label style={{ marginLeft: '1em' }}>
-					<input
-						type="radio"
-						name="cough"
-						value="no"
-						checked={cough === 'no'}
-						onChange={() => setCough('no')}
-					/>
-					いいえ
-				</label>
-			</fieldset>
-	
-			<fieldset>
-				<legend>くしゃみはよく出ますか？</legend>
-				<label>
-					<input
-						type="radio"
-						name="sneeze"
-						value="yes"
-						checked={sneeze === 'yes'}
-						onChange={() => setSneeze('yes')}
-					/>
-					はい
-				</label>
-				<label style={{ marginLeft: '1em' }}>
-					<input
-						type="radio"
-						name="sneeze"
-						value="no"
-						checked={sneeze === 'no'}
-						onChange={() => setSneeze('no')}
-					/>
-					いいえ
-				</label>
-			</fieldset>
+			{questions.map(({ key, label }) => (
+        		<fieldset key={key} style={{ margin: '1rem 0' }}>
+          			<legend>{label}</legend>
+          			<label>
+            			<input
+              				type="radio"
+							name={key}
+							value="yes"
+							checked={responses[key] === 'yes'}
+							onChange={() => handleRadio(key, 'yes')}
+						/>
+						はい
+					</label>
+					<label style={{ marginLeft: '1em' }}>
+						<input
+							type="radio"
+							name={key}
+							value="no"
+							checked={responses[key] === 'no'}
+							onChange={() => handleRadio(key, 'no')}
+						/>
+						いいえ
+					</label>
+					{errors[key] && (
+						<div style={{ color: 'red', marginTop: '0.5em' }} role="alert">
+						{errors[key]}
+						</div>
+					)}
+				</fieldset>
+			))}
 			
 			<div style={{ marginTop: '1em' }}>
 				<label>
