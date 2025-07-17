@@ -203,8 +203,9 @@ export default function FormPage() {
     	>
       		<h1>Pollen Survey System</h1>
       		<p>
-				「Check Geolocation」ボタンをクリックして、ブラウザが位置情報に対応しているかを
-        		確認します。
+				はいかいいえの質問にすべて回答して、自覚症状の期間を日・週・月から選択し、数字で入力してください。
+				日は１〜６、週は１〜４、月は１〜１２の間で入力してください。終わったら、「Check Geolocation」で位置情報とともに送信してください。
+				あなたが現在居る地域と花粉症とどの程度考えられるかが表示されます。
       		</p>
 
 			{questions.map(({ key, label }) => (
