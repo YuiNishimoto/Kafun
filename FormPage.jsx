@@ -112,7 +112,7 @@ export default function FormPage() {
 		const newErrors = {};
 
 		// 質問のチェック
-		questions.forEach(({ key, label }) => {
+		questions.forEach(({ key }) => {
     		if (!['yes', 'no'].includes(responses[key])) {
       			newErrors[key] = '回答が必要です';
     		}
@@ -208,7 +208,7 @@ export default function FormPage() {
 				あなたが現在居る地域、花粉症とどの程度考えられるか、花粉飛散量のグラフが表示されます。
       		</p>
 
-			{questions.map(({ key }) => (
+			{questions.map(({ key, label }) => (
         		<fieldset key={key} style={{ margin: '1rem 0' }}>
           			<legend>{label}</legend>
           			<label>
