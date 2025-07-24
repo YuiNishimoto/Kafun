@@ -37,6 +37,24 @@ function fmtDate(date){
 	return `${y}${m.toString().padStart(2,'0')}${d.toString().padStart(2,'0')}`;
 }
 
+function parseJsonOnly(text) {
+	// 前後の空白を除去
+	let s = text.trim();
+	// ```json と ``` を削除
+	s = s.replace(/```(?:json)?/g, '').trim();
+	// 最初の { or [ 以降を切り出し
+	const start = s.search(/[{[]/);
+	
+  	if (start >= 0) s = s.slice(start);
+  	// 最後の } or ] を探し、その直後までを残す
+  	const lastCurly = s.lastIndexOf('}');
+  	const lastSquare = s.lastIndexOf(']');
+  	const end = Math.max(lastCurly, lastSquare);
+  	if (end >= 0) s = s.slice(0, end + 1);
+  	
+  	return JSON.parse(s);
+}
+
 app.post('/api/locate', async (req, res) => {
 	try {
 		const {
@@ -115,17 +133,27 @@ app.post('/api/locate', async (req, res) => {
 			skip_empty_lines: true
 		});
 
-		const validRecords = records.filter(r => {
-			const cnt = Number(r.pollen);
-			return cnt !== -9999;
-		});
+		// 分析用（欠測値除外）
+		const validForAnalysis = records
+  			.filter(r => Number(r.pollen) !== -9999)
+  			.map(r => ({
+    			date: r.date,
+    			pollen: Number(r.pollen)
+  			}));
+  			
+  		// グラフ用（nullを残す）
+  		let graphInputs = records.map(r => ({
+  			date: r.date,
+  			pollen: Number(r.pollen) === -9999 ? null : Number(r.pollen)
+  		}));
 
-		const prompt = `過去1週間の花粉飛散量とユーザーの症状回答をもとに、花粉症とどの程度疑われるかを日本語で簡潔にまとめてください。
+		const analysisPrompt = `
+過去1週間の花粉飛散量とユーザーの症状回答をもとに、花粉症とどの程度疑われるかを日本語で簡潔にまとめてください。
 【症状期間】
 症状は${periodValue}${periodLabel}続いています。
 
 【花粉データ】
-${JSON.stringify(validRecords, null, 2)}
+${JSON.stringify(validForAnalysis, null, 2)}
 
 【症状回答】
 ${JSON.stringify(
@@ -133,32 +161,111 @@ ${JSON.stringify(
   null, 2
 )}
 
-ただし、以下の条件・考え方を守ってください。
-・回答の最初に「あなたの花粉症度は〇〇です。」と言って、「〇〇」には0から100の数字を入れてください。花粉症が原因のときは大きい数字、風邪・副鼻腔炎が原因のときは小さい数字を入れてください。
-・次に最も疑われる原因を「あなたの症状で最も疑われる原因は、（花粉症・風邪・副鼻腔炎）と考えられます。」と言ってください。
-・次にスギやヒノキなど、その時期に疑われるアレルゲンを示してください。
-・花粉データは「2025-07-10T00:00:00+09:00: 1」のようになっており、「2025-07-10T00:00:00+09:00」が時間、「1」が花粉飛散量（花粉の個数/cm^2）です。
-・症状期間が長いほど花粉症と考えられ、2週間を超える場合は風邪ではないと考えられます。
-・花粉症と診断されている場合、されてない場合に比べて、花粉症が原因である可能性が高いと言えます。
-・目のかゆみがある場合、花粉症と考えられます。
-・一番最後の回答は、屋内にいる時よりも外にいる時に症状を感じるかどうかの回答です。そう感じない場合はいいえと答えています。
-・屋外の方が症状を強く感じる場合、花粉症と考えられます。
-・くしゃみがよく出る場合、副鼻腔炎ではないと考えられます。
-・発熱している場合、風邪と考えられますが、目や頬の奥が痛い場合には、副鼻腔炎が考えられるため、花粉症ではないと言い切れません。
-・目のかゆみがなくて、鼻水も出ないのに咳が出る場合、風邪と考えられます。
+・花粉データはdateが時間、pollenが花粉飛散量（花粉の個数/cm^2）です。1時間ごとのデータで、欠測値は除外されています。
+・一番最後の回答は、屋内にいる時より外にいる時に症状を感じるかどうかの回答です。そう感じない場合は、どちらも同じと感じているか、屋内の方が症状がひどいと感じています。
+
+以下の出力フォーマットを厳密に守ってください。  
+1. まず「あなたの花粉症度は〇〇です。」（〇〇は0–100の数字）。  
+2. 次に「あなたの症状で最も疑われる原因は、〇〇です。」  
+3. 次に原因ランキング（5位まで）を、必ず確率付きで示してください。
+4. 次にこの時期に疑われるアレルゲンを提示してください。
+5. 最後に理由などの説明
+
+――――――――――  
+期待する出力例 （この例は参考です。この例にはない疾患が疑われる場合は、その疾患を答えて下さい。）
+あなたの花粉症度は50です。  
+あなたの症状で最も疑われる原因は、花粉症です。  
+
+原因ランキング:  
+1. 花粉症  50%
+2. 副鼻腔炎  20%
+3. 風邪  15%
+4. 気管支炎 10%
+5. その他の疾患  5%
+
+この時期に疑われるアレルゲンは、スギやヒノキです。  
+
+（解説）
+――――――――――
 `;
 		const chat = await openai.chat.completions.create({
 			model: 'gpt-4.1-mini-2025-04-14',
 			messages: [
 				{ role: 'system', content: 'あなたは花粉の専門家です。' },
-				{ role: 'user',   content: prompt }
+				{ role: 'user',   content: analysisPrompt }
 			],
 			temperature: 0.7
 		});
 		const analysis = chat.choices[0].message.content.trim();
-
-		return res.json({city, ward, analysis});
-
+		
+		if (graphInputs.some(({ pollen }) => pollen === null)) {
+			// 欠測値の補完
+			const imputePrompt = `
+必ず**純粋な JSON**のみ返してください（説明文・コードフェンス不要）。
+以下は1時間ごとの花粉飛散量（花粉の個数/cm^2）のデータです。欠測にはnullがあります。
+欠測部分を予測し、補完して下さい。
+${JSON.stringify(graphInputs, null, 2)}
+`;
+			const imputeRes = await openai.chat.completions.create({
+    			model: 'gpt-4.1-nano-2025-04-14',
+    			messages: [
+					{ role: 'system', content: 'あなたは時系列データの欠測を補完する専門家です。' },
+      				{ role: 'user',   content: imputePrompt }
+    			],
+    			temperature: 0
+  			});
+  			console.log('📝 impute 生レスポンス:\n', imputeRes.choices[0].message.content);
+  			
+  			let imputedRecords;
+  			try {
+  				imputedRecords = parseJsonOnly(imputeRes.choices[0].message.content);
+  			} catch (err) {
+  				console.error('欠測値の補完に失敗:', err);
+  				imputedRecords = graphInputs;
+  			}
+  			graphInputs = imputedRecords;
+  			graphInputs.sort( (a, b) => new Date(a.date) - new Date(b.date) );
+  		}
+		
+		const chartPrompt = `
+必ず**純粋な JSON**のみ返してください（説明文・コードフェンス不要）。
+以下のデータをVega-Lite spec形式のJSONにして下さい。
+期待するエンコーディング例：
+"encoding": {
+  "x": { "field": "date", "type": "temporal" },
+  "y": { "field": "pollen", "type": "quantitative" }
+}
+${JSON.stringify(graphInputs, null, 2)}
+`;
+		const chartRes = await openai.chat.completions.create({
+  			model: 'gpt-4.1-nano-2025-04-14',
+  			messages: [
+    			{ role: 'system', content: 'あなたはデータ可視化の専門家です。' },
+    			{ role: 'user',   content: chartPrompt }
+  			],
+  			temperature: 0
+		});
+		console.log('📝 chart 生レスポンス:\n', chartRes.choices[0].message.content);
+		
+		const defaultSpec = {
+			$schema: "https://vega.github.io/schema/vega-lite/v5.json",
+			"data": { "values": graphInputs },
+			"mark": "line",
+			"encoding": {
+    			"x": {"field":"date","type":"temporal"},
+    			"y": {"field":"pollen","type":"quantitative"}
+  			}
+		};
+		let vegaSpec;
+  			try {
+  				vegaSpec = parseJsonOnly(chartRes.choices[0].message.content);
+  			} catch (err) {
+  				console.error('Vega-Lite spec パース失敗:', err);
+  				vegaSpec= defaultSpec;
+  			}
+		
+		return res.json({city, ward, analysis, records: graphInputs, vegaSpec });
+		
 	} catch (err) {
 		console.error(err);
 		return res.status(500).json({
