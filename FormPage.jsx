@@ -208,7 +208,7 @@ export default function FormPage() {
 				あなたが現在居る地域、花粉症とどの程度考えられるか、花粉飛散量のグラフが表示されます。
       		</p>
 
-			{questions.map(({ key, label }) => (
+			{questions.map(({ key }) => (
         		<fieldset key={key} style={{ margin: '1rem 0' }}>
           			<legend>{label}</legend>
           			<label>
